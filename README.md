@@ -1,4 +1,4 @@
 arduino-dali
 ============
 
-Libreria Dali per
+Libreria Dali per Cosino by HCE Engineering
