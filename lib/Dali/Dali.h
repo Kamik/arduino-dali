@@ -41,14 +41,14 @@ private:
 	volatile uint8_t bus_idle_te_cnt;	//Numero di tempi te(417 us) con il bus IDLE
 	
 	void push_halfbit(uint8_t bit);
-}; 
-
-struct dali_ptr{
-Dali *bus[10];
-uint8_t n_bus;
-} Master;
+};
 
 void serialDali(void);
+
+typedef struct dali_ptr{
+	Dali *bus[10];
+	uint8_t n_bus;
+} Masters;
 /*  
 SIGNAL CHARACTERISTICS
 High Level: 9.5 to 22.5 V (Typical 16 V)
