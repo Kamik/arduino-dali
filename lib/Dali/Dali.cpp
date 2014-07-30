@@ -324,11 +324,11 @@ void serialDali(void)
 	
 	if (Serial.available()){
 		Serial.print("char: ");
-		Serial.read(msg+bytes_rx);
+		Serial.read(msg[bytes_rx]);
 		bytes_rx++;
 		Serial.print(msg[bytes_rx]);
 		Serial.println(";");
-		if (bytes_rx == 9){
+		if (bytes_rx > 8){
 			if (msg[8] != '\n') return;
 			exeCmd(reinterpret_cast<uint8_t *>(msg));
 			bytes_rx = 0;
