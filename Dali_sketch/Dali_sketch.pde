@@ -9,7 +9,5 @@ void setup() {
 
 void loop() {
   serialDali();
-  delay(5000);
-  Serial.println("Waiting for istructions...");
 }
 

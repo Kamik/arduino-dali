@@ -329,7 +329,8 @@ void serialDali(void)
 		if (bytes_rx == 9){
 			if (msg[8] != '\n') return;
 			exeCmd(reinterpret_cast<uint8_t *>(msg));
-			bytes_rx = 0;	
+			bytes_rx = 0;
+			Serial.println("Waiting for istructions...");
 		}
 	}
 }
