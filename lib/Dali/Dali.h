@@ -18,7 +18,7 @@ public:
 	#define DALI_HOOK_COUNT 3
 
 private:
-	uint8_t bus_number; 
+	uint8_t bus_number;
 
 	enum tx_stateEnum { IDLE=0,START,START_X,BIT,BIT_X,STOP1,STOP1_X,STOP2,STOP2_X,STOP3};
 	uint8_t tx_pin;					//Pin di trasmissione (Arduino)

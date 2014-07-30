@@ -20,6 +20,7 @@ static Dali *IsrTimerHooks[DALI_HOOK_COUNT+1];
 void serialDali_rx(Dali *d, uint8_t *data, uint8_t len);
 void exeCmd(uint8_t *msg);
 Masters Master;
+uint8_t bytes_rx;
 
 ISR(TIMER1_COMPA_vect) {         
 	for(uint8_t i=0;i<DALI_HOOK_COUNT;i++) {
@@ -265,6 +266,7 @@ void Dali::begin(void) {
 	Master.bus[i] = (Dali *) malloc(sizeof(this));
 	Master.n_bus++;
 	this->bus_number = i;
+	bytes_rx = 0;
 }
 
 
@@ -320,11 +322,14 @@ void serialDali(void)
 {
 	char msg[9];
 	
-	if (Serial.available() == 9)
-	{
-		Serial.readBytes(msg,9);
-		if (msg[8] != '\n') return;
-		exeCmd(reinterpret_cast<uint8_t *>(msg));		
+	if (Serial.available()){
+		Serial.readBytes(msg+bytes_rx,1);
+		bytes_rx++;
+		if (bytes_rx == 9){
+			if (msg[8] != '\n') return;
+			exeCmd(reinterpret_cast<uint8_t *>(msg));
+			bytes_rx = 0;	
+		}
 	}
 }
 
