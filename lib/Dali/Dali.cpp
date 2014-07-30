@@ -326,7 +326,7 @@ void serialDali(void)
 		Serial.print("char: ");
 		Serial.readBytes(msg+bytes_rx,1);
 		bytes_rx++;
-		Serial.write(msg[bytes_rx]);
+		Serial.print(msg[bytes_rx]);
 		Serial.println(";");
 		if (bytes_rx == 9){
 			if (msg[8] != '\n') return;
