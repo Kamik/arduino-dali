@@ -18,7 +18,7 @@
 //###########################################################################
 static Dali *IsrTimerHooks[DALI_HOOK_COUNT+1];
 void serialDali_rx(Dali *d, uint8_t *data, uint8_t len);
-void exeCmd(uint8_t *msg);
+uint8_t exeCmd(uint8_t *msg);
 Masters Master;
 uint8_t bytes_rx;
 
@@ -321,17 +321,16 @@ uint8_t Dali::sendwait_byte(uint8_t tx_msg, uint32_t timeout_ms) {
 void serialDali(void)
 {
 	char msg[9];
+	uint8_t ret;
 	
 	if (Serial.available()){
 		msg[bytes_rx] = (char)Serial.read();
-		Serial.print("char: ");
 		Serial.print(msg[bytes_rx++]);
-		Serial.println(";");
 		if (bytes_rx > 8){
-			if (msg[8] != '\n') return;
-			exeCmd(reinterpret_cast<uint8_t *>(msg));
+			if (msg[8] == '\n') ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
+			if (ret < 0) Serial.println("Invalid istruction!\nWaiting for other istructions...");
+			else Serial.println("Istruction executed!\nWaiting for other istructions...");
 			bytes_rx = 0;
-			Serial.println("Waiting for istructions...");
 		}
 	}
 }
@@ -346,33 +345,34 @@ void serialDali_rx(Dali *d, uint8_t *data, uint8_t len)
 	Serial.write(reinterpret_cast<const uint8_t *>(buf), 3);
 }
 
-void exeCmd(uint8_t *msg)
+uint8_t exeCmd(uint8_t *msg)
 {
 	uint8_t bus_n, addr_gr, sel, buf[2];
 	
 	bus_n = (msg[0]-48)*10 + (msg[1]-48);
-	if (Master.bus[bus_n] == NULL)	return;
+	if (Master.bus[bus_n] == NULL)	return -1;
 	addr_gr = (msg[3]-48)*10 + (msg[4]-48);
-	if (addr_gr > 63) return;
+	if (addr_gr > 63) return -1;
 	buf[1] = (msg[6]-48)*10 + (msg[7]-48);
 
 	if (msg[5] == 'd') sel = 0;
 	else if (msg[5] == 'c') sel = 1;
-	else return;
+	else return -1;
 
 	if (msg[2] == 's')
 		buf[0] = (addr_gr << 1) | sel;
 	else if (msg[2] == 'b')
 		buf[0] = 0xFE | sel;
 	else if (msg[2] == 'g'){
-		if (addr_gr > 15) return;
+		if (addr_gr > 15) return -1;
 		buf[0] = 0x80 | (addr_gr << 1) | sel;
-	}else return;
+	}else return -1;
 	
 	Master.bus[bus_n]->send(buf, 2);
 	if (buf[1] >= 0x90 || buf[1] <= 0x9B || buf[1] >= 0xA0 || buf[1] <= 0xA5 || buf[1] >= 0xB0 || buf[1] <= 0xC4)
 		Master.bus[bus_n]->EventHandlerReceivedData = &serialDali_rx;
 	Serial.println("Comando inviato");
+	return 1;
 }
 
 
