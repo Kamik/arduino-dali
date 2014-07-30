@@ -323,8 +323,8 @@ void serialDali(void)
 	char msg[9];
 	
 	if (Serial.available()){
-		Serial.print("char: ");
 		msg[bytes_rx] = (char)Serial.read();
+		Serial.print("char: ");
 		bytes_rx++;
 		Serial.print(msg[bytes_rx]);
 		Serial.println(";");
