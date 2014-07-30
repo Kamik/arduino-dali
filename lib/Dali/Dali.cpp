@@ -371,7 +371,6 @@ uint8_t exeCmd(uint8_t *msg)
 	Master.bus[bus_n]->send(buf, 2);
 	if (buf[1] >= 0x90 || buf[1] <= 0x9B || buf[1] >= 0xA0 || buf[1] <= 0xA5 || buf[1] >= 0xB0 || buf[1] <= 0xC4)
 		Master.bus[bus_n]->EventHandlerReceivedData = &serialDali_rx;
-	Serial.println("Comando inviato");
 	return 1;
 }
 
