@@ -324,7 +324,7 @@ void serialDali(void)
 	
 	if (Serial.available()){
 		msg[bytes_rx] = (char)Serial.read();
-		Serial.print(msg[bytes_rx]);
+		//Serial.print(msg[bytes_rx]);
 		if (msg[bytes_rx++] == '\n'){
 			if (bytes_rx == 9){
 				ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
