@@ -325,17 +325,16 @@ void serialDali(void)
 	if (Serial.available()){
 		msg[bytes_rx] = (char)Serial.read();
 		//Serial.print(msg[bytes_rx]);
-		if (msg[bytes_rx++] == '\n'){
-			if (bytes_rx == 9){
+		if (msg[bytes_rx] == '\n'){
+			if (bytes_rx == 8){
 				/*ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
 				if (ret) serialDali_rx(ret, NULL);*/
-				bytes_rx = 0;
-				Serial.println("s01");
+				Serial.println("saa");
 			}else{
-				bytes_rx = 0;
 				Serial.println("e01");
 			}
-		}
+			bytes_rx = 0;
+		} else bytes_rx++;
 	}
 }
 
