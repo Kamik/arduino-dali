@@ -17,10 +17,12 @@
 // ISR Trasmissione
 //###########################################################################
 static Dali *IsrTimerHooks[DALI_HOOK_COUNT+1];
-void serialDali_rx(Dali *d, uint8_t *data, uint8_t len);
+void Dali_rx(Dali *d, uint8_t *data, uint8_t len);
+void serialDali_rx(uint8_t error, uint8_t *data);
 uint8_t exeCmd(uint8_t *msg);
 Masters Master;
 uint8_t bytes_rx;
+char msg[9];
 
 ISR(TIMER1_COMPA_vect) {         
 	for(uint8_t i=0;i<DALI_HOOK_COUNT;i++) {
@@ -98,6 +100,7 @@ void Dali::ISR_timer() {
 		this->rx_data = this->rx_msg;
 		if((bitlen & 0x7) == 0) {
 			uint8_t len = bitlen >> 3;
+			this->rx_int_rq = 0;
 			if(this->EventHandlerReceivedData != NULL) this->EventHandlerReceivedData(this,(uint8_t*)this->rx_msg, len);
 		}
 	}
@@ -198,9 +201,9 @@ void Dali::push_halfbit(uint8_t bit) {
 //###########################################################################
 // Dali Class
 //###########################################################################
-void Dali::begin(void) {
-	this->tx_pin=12;
-	this->rx_pin=11;
+void Dali::begin(uint8_t tx_pin, uint8_t rx_pin) {
+	this->tx_pin=tx_pin;
+	this->rx_pin=rx_pin;
 	this->tx_state = IDLE;
 	this->rx_state = RX_IDLE;
     
@@ -217,7 +220,7 @@ void Dali::begin(void) {
 		TCCR1B = 0;
 		TCNT1  = 0;
 
-		OCR1A = (F_CPU + DALI_BAUD) / (2 * DALI_BAUD);            // compare match register 16MHz/256/2Hz
+		OCR1A = (F_CPU + DALI_BAUD) / (2 * DALI_BAUD); // compare match register 16MHz/256/2Hz
 		TCCR1B |= (1 << WGM12);   // CTC mode
 		TCCR1B |= (1 << CS10);    // 1:1 prescaler 
 		TIMSK1 |= (1 << OCIE1A);  // Interrupt abilitato
@@ -237,26 +240,22 @@ void Dali::begin(void) {
 		pinMode(this->rx_pin, INPUT);    
 
 		//setup rx pinchange interrupt
-		// 0- 7 PCINT2_vect PCINT16-23
-		// 8-13 PCINT0_vect PCINT0-5
-		//14-19 PCINT1_vect PCINT8-13
-		/*  SBAGLIATO ASSOLUTAMENTE!!!!
-		if(this->rx_pin<=7){
-			PCICR |= (1<<PCIE2);
-			PCMSK2 |= (1<< (this->rx_pin));
-			IsrPCINT2Hook = this; //setup pinchange interrupt hook
-		}else if(this->rx_pin<=13) {
-			PCICR |= (1<<PCIE0);
-			PCMSK0 |= (1<< (this->rx_pin-8));
+		//10-13  PCINT0_vect PCINT4-7
+		//14-15  PCINT1_vect PCINT9-10
+		//A8-A15 PCINT2_vect PCINT16-23
+		if(this->rx_pin <= 13 && this->rx_pin >= 10){
+			PCICR |= (1 << PCIE0);
+			PCMSK0 |= (1 << (this->rx_pin - 6));
 			IsrPCINT0Hook = this; //setup pinchange interrupt hook
-		}else if(this->rx_pin<=19) {
-			PCICR |= (1<<PCIE1);
-			PCMSK1 |= (1<< (this->rx_pin-14));
+		}else if(this->rx_pin == 14 && this->rx_pin == 15) {
+			PCICR |= (1 << PCIE1);
+			PCMSK1 |= (1<< (this->rx_pin - 13));
 			IsrPCINT1Hook = this; //setup pinchange interrupt hook
-		}*/
-		PCICR |= (1 << PCIE0);
-		PCMSK0 |= (1 << 4);
-		IsrPCINT0Hook = this;
+		}else if(this->rx_pin <= A15 && this->rx_pin >= A8) {
+			PCICR |= (1 << PCIE2);
+			PCMSK2 |= (1 << (this->rx_pin - 62));
+			IsrPCINT2Hook = this; //setup pinchange interrupt hook
+		}
 	}
 	
 	uint8_t i;
@@ -272,36 +271,37 @@ void Dali::begin(void) {
 
 uint8_t Dali::send(uint8_t* tx_msg, uint8_t tx_len_bytes) {
 	if(tx_len_bytes > 3)
-		return 2;
+		return -1;
 	if(this->tx_state != IDLE)
-		return 1; 
+		return -1; 
 	for(uint8_t i = 0; i < tx_len_bytes; i++)
 		this->tx_msg[i] = tx_msg[i];
 	this->tx_len = tx_len_bytes << 3;
 	this->tx_collision = 0;
 	this->tx_state = START;
-	this->rx_int_rq = 1;
-	return 0;
+	return 1;
 }
 
 uint8_t Dali::sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms) {
 	if(tx_len_bytes > 3)
-		return 5;
+		return -1;
 	uint32_t ts = millis();
 	//wait for idle
 	while(this->tx_state != IDLE)
 		if(millis() - ts > timeout_ms)
-			return 4;
+			return -1;
 	//start transmit
-	if(this->send(tx_msg,tx_len_bytes))
-		return 5;
-	this->rx_int_rq = 0;
+	if(this->send(tx_msg,tx_len_bytes) < 0)
+		return -1;
+	this->rx_int_rq = 1;
 	//Aspetto che la trasmissione sia completa
 	while(this->tx_state != IDLE)
 		if(millis() - ts > timeout_ms)		//Timeout??
-			return 6;
-	while(this->rx_int_rq == 0);
-	return this->rx_int_rq;
+			return -1;
+	while(this->rx_int_rq);
+		if(millis() - ts > timeout_ms)		//Timeout??
+			return -1;
+	return 1;
 }
 
 uint8_t Dali::sendwait_int(uint16_t tx_msg, uint32_t timeout_ms) {
@@ -320,29 +320,54 @@ uint8_t Dali::sendwait_byte(uint8_t tx_msg, uint32_t timeout_ms) {
 
 void serialDali(void)
 {
-	char msg[9];
 	uint8_t ret;
 	
 	if (Serial.available()){
 		msg[bytes_rx] = (char)Serial.read();
-		Serial.print(msg[bytes_rx++]);
-		if (bytes_rx > 8){
-			if (msg[8] == '\n') ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
-			if (ret < 0) Serial.println("Invalid istruction!\nWaiting for other istructions...");
-			else Serial.println("Istruction executed!\nWaiting for other istructions...");
-			bytes_rx = 0;
+		Serial.print(msg[bytes_rx]);
+		if (msg[bytes_rx++] == '\n'){
+			if (bytes_rx == 9){
+				ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
+				if (ret) serialDali_rx(ret, NULL);
+			}else{
+				bytes_rx = 0;
+				Serial.println("e01");
+			}
 		}
 	}
 }
 
-void serialDali_rx(Dali *d, uint8_t *data, uint8_t len)
+void serialDali_rx(uint8_t error, uint8_t *data)
 {
-	uint8_t buf[3];
+	uint8_t buf[4];
 	
-	buf[0] = data[0] / 10;
-	buf[1] = data[0] % 10;
-	buf[2] = '\n';
-	Serial.write(reinterpret_cast<const uint8_t *>(buf), 3);
+	if (error == 0){
+		buf[0] = 's';
+		buf[1] = data[0] / 10;
+		buf[2] = data[0] % 10;
+		buf[3] = '\n';
+		Serial.write(buf, 4);
+	}else{
+		switch(error){
+			case 1:	
+				Serial.println("e01");
+				break;
+			case 2:
+				Serial.println("e02");
+				break;
+			case 20:
+				Serial.println("e20");
+				break;
+			case 90:
+				Serial.println("e90");
+				break;
+		}
+	}	
+}
+
+void Dali_rx(Dali *d, uint8_t *data, uint8_t len)
+{
+	serialDali_rx(0, data);
 }
 
 uint8_t exeCmd(uint8_t *msg)
@@ -350,28 +375,33 @@ uint8_t exeCmd(uint8_t *msg)
 	uint8_t bus_n, addr_gr, sel, buf[2];
 	
 	bus_n = (msg[0]-48)*10 + (msg[1]-48);
-	if (Master.bus[bus_n] == NULL)	return -1;
+	if (bus_n > 3)	return 20;
 	addr_gr = (msg[3]-48)*10 + (msg[4]-48);
-	if (addr_gr > 63) return -1;
+	if (addr_gr > 63) return 1;
 	buf[1] = (msg[6]-48)*10 + (msg[7]-48);
 
 	if (msg[5] == 'd') sel = 0;
 	else if (msg[5] == 'c') sel = 1;
-	else return -1;
+	else return 1;
 
 	if (msg[2] == 's')
 		buf[0] = (addr_gr << 1) | sel;
 	else if (msg[2] == 'b')
 		buf[0] = 0xFE | sel;
 	else if (msg[2] == 'g'){
-		if (addr_gr > 15) return -1;
+		if (addr_gr > 15) return 1;
 		buf[0] = 0x80 | (addr_gr << 1) | sel;
-	}else return -1;
+	}else return 1;
 	
-	Master.bus[bus_n]->send(buf, 2);
-	if (buf[1] >= 0x90 || buf[1] <= 0x9B || buf[1] >= 0xA0 || buf[1] <= 0xA5 || buf[1] >= 0xB0 || buf[1] <= 0xC4)
-		Master.bus[bus_n]->EventHandlerReceivedData = &serialDali_rx;
-	return 1;
+	
+	if (buf[1] >= 0x90 || buf[1] <= 0x9B || buf[1] >= 0xA0 || buf[1] <= 0xA5 || buf[1] >= 0xB0 || buf[1] <= 0xC4){
+		Master.bus[bus_n]->EventHandlerReceivedData = &Dali_rx;
+		if (Master.bus[bus_n]->sendwait(buf, 2, 100) < 0){
+			Master.bus[bus_n]->EventHandlerReceivedData = NULL;
+			return 90;
+		}
+	}else Master.bus[bus_n]->send(buf, 2);
+	return 0;
 }
 
 

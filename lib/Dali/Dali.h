@@ -6,7 +6,7 @@ public:
 	typedef void (*EventHandlerReceivedDataFuncPtr)(Dali *sender, uint8_t *data, uint8_t len);
 	EventHandlerReceivedDataFuncPtr EventHandlerReceivedData;
 
-	void begin(void);
+	void begin(uint8_t tx_pin, uint8_t rx_pin);
 	uint8_t send(uint8_t* tx_msg, uint8_t tx_len_bytes);
 	uint8_t sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms=500);
 	uint8_t sendwait_int(uint16_t tx_msg, uint32_t timeout_ms=500);
@@ -46,7 +46,7 @@ private:
 void serialDali(void);
 
 typedef struct dali_ptr{
-	Dali *bus[10];
+	Dali *bus[3];
 	uint8_t n_bus;
 } Masters;
 /*  
