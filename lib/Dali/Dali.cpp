@@ -330,7 +330,7 @@ void serialDali(void)
 				/*ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
 				if (ret) serialDali_rx(ret, NULL);*/
 				bytes_rx = 0;
-				Serial.println("OKO");
+				Serial.println("s01");
 			}else{
 				bytes_rx = 0;
 				Serial.println("e01");
