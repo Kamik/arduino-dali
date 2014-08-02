@@ -327,8 +327,10 @@ void serialDali(void)
 		//Serial.print(msg[bytes_rx]);
 		if (msg[bytes_rx++] == '\n'){
 			if (bytes_rx == 9){
-				ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
-				if (ret) serialDali_rx(ret, NULL);
+				/*ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
+				if (ret) serialDali_rx(ret, NULL);*/
+				bytes_rx = 0;
+				Serial.println("OKO");
 			}else{
 				bytes_rx = 0;
 				Serial.println("e01");
