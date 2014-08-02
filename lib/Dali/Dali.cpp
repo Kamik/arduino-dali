@@ -329,9 +329,9 @@ void serialDali(void)
 			if (bytes_rx == 8){
 				/*ret = exeCmd(reinterpret_cast<uint8_t *>(msg));
 				if (ret) serialDali_rx(ret, NULL);*/
-				Serial.println("saa");
+				Serial.print("saa\n");
 			}else{
-				Serial.println("e01");
+				Serial.print("e01\n");
 			}
 			bytes_rx = 0;
 		} else bytes_rx++;
@@ -351,16 +351,16 @@ void serialDali_rx(uint8_t error, uint8_t *data)
 	}else{
 		switch(error){
 			case 1:	
-				Serial.println("e01");
+				Serial.print("e01\n");
 				break;
 			case 2:
-				Serial.println("e02");
+				Serial.print("e02\n");
 				break;
 			case 20:
-				Serial.println("e20");
+				Serial.print("e20\n");
 				break;
 			case 90:
-				Serial.println("e90");
+				Serial.print("e90\n");
 				break;
 		}
 	}	
