@@ -1,5 +1,11 @@
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
+#include "Arduino.h"
+
+#define DALI_HOOK_COUNT 2
+enum addr_type {BROADCAST = 0, GROUP, SINGLE};
+enum readdr_type {ALL = 0, MISS_SHORT = 255};
 
 class Dali {
 public:
@@ -13,42 +19,60 @@ public:
 	uint8_t sendwait_byte(uint8_t tx_msg, uint32_t timeout_ms=500);
 	void ISR_timer();
 	void ISR_pinchange();
-  
-	volatile uint8_t *rx_data;
-	#define DALI_HOOK_COUNT 3
+
+	uint8_t sendDirect(uint8_t val, addr_type type_addr, uint8_t addr);
+	uint8_t sendCommand(uint8_t val, addr_type type_addr, uint8_t addr);
+	uint8_t sendExtCommand(uint16_t com, uint8_t val);
+
+	void readStat(addr_type type_addr, uint8_t addr);
+
+	//DALIDA functions
+	void remap(readdr_type remap_type);
+	void abort_remap(void);
+	void list_dev(void);
+
+	//DALIDA variables
+	uint8_t dali_status;	//b0 = remapping, b1 = need remap,
+	uint8_t dali_cmd;	//b0 = stop remap,
+	uint8_t slaves[8];
 
 private:
 	uint8_t bus_number;
 
 	enum tx_stateEnum { IDLE=0,START,START_X,BIT,BIT_X,STOP1,STOP1_X,STOP2,STOP2_X,STOP3};
-	uint8_t tx_pin;					//Pin di trasmissione (Arduino)
-	uint8_t tx_msg[3];				//Sequenza da trasmettere
-	uint8_t tx_len;					//Numero di bytes da trasmettere
+	uint8_t tx_pin;				//Pin di trasmissione (Arduino)
+	uint8_t tx_msg[3];			//Sequenza da trasmettere
+	uint8_t tx_len;				//Numero di bytes da trasmettere
 	volatile uint8_t tx_pos;		//Posizione dell'attuale bit da trasmettere
-	volatile tx_stateEnum tx_state;	//Stato di trasmissione corrente
-	volatile uint8_t tx_bus_low;	//Bus a livello logico 0?
-	volatile uint8_t tx_collision;  //Collisione avvenuta?
+	volatile tx_stateEnum tx_state;		//Stato di trasmissione corrente
+	volatile uint8_t tx_bus_low;		//Bus a livello logico 0?
+	volatile uint8_t tx_collision;  	//Collisione avvenuta?
 	
 	enum rx_stateEnum { RX_IDLE,RX_START,RX_BIT};
-	uint8_t rx_pin;						//Pin di ricezione
+	uint8_t rx_pin;				//Pin di ricezione (Arduino)
 	volatile uint8_t rx_last_bus_low;	//Ultimo livello logico bus di ricezione = 0?
-	volatile uint32_t rx_last_change_ts;//Timestamp ultimo pinchange
+	volatile uint32_t rx_last_change_ts;	//Timestamp ultimo pinchange
 	volatile rx_stateEnum rx_state;		//Stato di ricezione corrente
-	volatile uint8_t rx_msg[3];			//Sequenza ricevuta
-	volatile int8_t rx_len;				//Numero di bytes ricevuti
+	volatile uint8_t rx_msg[3];		//Sequenza ricevuta
+	volatile int8_t rx_len;			//Numero di bytes ricevuti
 	volatile uint8_t rx_last_halfbit;	//Ultimo mezzo-bit ricevuto
-	volatile uint8_t rx_int_rq;			//Richiesta di lancio routine interrupt personale
+	volatile uint8_t rx_int_rq;		//Richiesta di lancio routine interrupt personale
 	volatile uint8_t bus_idle_te_cnt;	//Numero di tempi te(417 us) con il bus IDLE
 	
 	void push_halfbit(uint8_t bit);
+	
+	//DALIDA
+	uint8_t setDevAddress(uint8_t start_addr, readdr_type all);
+	uint32_t findDev(uint32_t base_addr, uint32_t delta_addr, uint8_t n);
+	void setSearch(uint32_t addr);
 };
 
 void serialDali(void);
+extern Dali * Master[2];
+extern uint8_t bytes_rx;
+extern void storeSlaves(Dali *dali, uint8_t *slaves);
+extern uint8_t dev_found;
 
-typedef struct dali_ptr{
-	Dali *bus[3];
-	uint8_t n_bus;
-} Masters;
 /*  
 SIGNAL CHARACTERISTICS
 High Level: 9.5 to 22.5 V (Typical 16 V)
@@ -122,73 +146,120 @@ These commands take the form YAAA AAA1 xxXXxx.
 
 xxXXxx: These 8 bits transfer the command number. The available command numbers are listed and explained in the following tables in hexadecimal and decimal formats.
 
-Command; Command No; Description; Answer
-00hex 0dez Extinguish the lamp (without fading) - 
-01hex 1dez Dim up 200 ms using the selected fade rate - 
-02hex 2dez Dim down 200 ms using the selected fade rate - 
-03hex 3dez Set the actual arc power level one step higher without fading. If the lamp is off, it will be not ignited. - 
-04hex 4dez Set the actual arc power level one step lower without fading. If the lamp has already it's minimum value, it is not switched off. - 
-05hex 5dez Set the actual arc power level to the maximum value. If the lamp is off, it will be ignited. - 
-06hex 6dez Set the actual arc power level to the minimum value. If the lamp is off, it will be ignited. - 
-07hex 7dez Set the actual arc power level one step lower without fading. If the lamp has already it's minimum value, it is switched off. - 
-08hex 8dez Set the actual arc power level one step higher without fading. If the lamp is off, it will be ignited. - 
-09hex ... 0Fhex 9dez ... 15dez reserved - 
-1nhex
-(n: 0hex ... Fhex) 16dez ... 31dez Set the light level to the value stored for the selected scene (n) - 
+0 YAAA AAA1 0000 0000 OFF
+1 YAAA AAA1 0000 0001 UP
+2 YAAA AAA1 0000 0010 DOWN
+3 YAAA AAA1 0000 0011 STEP UP
+4 YAAA AAA1 0000 0100 STEP DOWN
+5 YAAA AAA1 0000 0101 RECALL MAX LEVEL
+6 YAAA AAA1 0000 0110 RECALL MIN LEVEL
+7 YAAA AAA1 0000 0111 STEP DOWN AND OFF
+8 YAAA AAA1 0000 1000 ON AND STEP UP
+9 YAAA AAA1 0000 1001 ENABLE DAPC SEQUENCE
+
+16 – 31 YAAA AAA1 0001 XXXX GO TO SCENE
+32 YAAA AAA1 0010 0000 RESET
+33 YAAA AAA1 0010 0001 STORE ACTUAL LEVEL IN THE DTR
+
+42 YAAA AAA1 0010 1010 STORE THE DTR AS MAX LEVEL
+43 YAAA AAA1 0010 1011 STORE THE DTR AS MIN LEVEL
+44 YAAA AAA1 0010 1100 STORE THE DTR AS SYSTEM FAILURE LEVEL
+45 YAAA AAA1 0010 1101 STORE THE DTR AS POWER ON LEVEL
+46 YAAA AAA1 0010 1110 STORE THE DTR AS FADE TIME
+47 YAAA AAA1 0010 1111 STORE THE DTR AS FADE RATE
+
+64 – 79 YAAA AAA1 0100 XXXX STORE THE DTR AS SCENE
+80 – 95 YAAA AAA1 0101 XXXX REMOVE FROM SCENE
+96 – 111 YAAA AAA1 0110 XXXX ADD TO GROUP
+112 – 127 YAAA AAA1 0111 XXXX REMOVE FROM GROUP
+128 YAAA AAA1 1000 0000 STORE DTR AS SHORT ADDRESS
+129 YAAA AAA1 1000 0001 ENABLE WRITE MEMORY
+
+144 YAAA AAA1 1001 0000 QUERY STATUS
+145 YAAA AAA1 1001 0001 QUERY CONTROL GEAR
+146 YAAA AAA1 1001 0010 QUERY LAMP FAILURE
+147 YAAA AAA1 1001 0011 QUERY LAMP POWER ONLicensed by SOURCE to METROLIGHT
+
+148 YAAA AAA1 1001 0100 QUERY LIMIT ERROR
+149 YAAA AAA1 1001 0101 QUERY RESET STATE
+150 YAAA AAA1 1001 0110 QUERY MISSING SHORT ADDRESS
+151 YAAA AAA1 1001 0111 QUERY VERSION NUMBER
+152 YAAA AAA1 1001 1000 QUERY CONTENT DTR
+153 YAAA AAA1 1001 1001 QUERY DEVICE TYPE
+154 YAAA AAA1 1001 1010 QUERY PHYSICAL MINIMUM LEVEL
+155 YAAA AAA1 1001 1011 QUERY POWER FAILURE
+156 YAAA AAA1 1001 1100 QUERY CONTENT DTR1
+157 YAAA AAA1 1001 1101 QUERY CONTENT DTR2
+
+160 YAAA AAA1 1010 0000 QUERY ACTUAL LEVEL
+161 YAAA AAA1 1010 0001 QUERY MAX LEVEL
+162 YAAA AAA1 1010 0010 QUERY MIN LEVEL
+163 YAAA AAA1 1010 0011 QUERY POWER ON LEVEL
+164 YAAA AAA1 1010 0100 QUERY SYSTEM FAILURE LEVEL
+165 YAAA AAA1 1010 0101 QUERY FADE TIME/FADE RATE
+
+176 – 191 YAAA AAA1 1011 XXXX QUERY SCENE LEVEL (SCENES 0-15)
+192 YAAA AAA1 1100 0000 QUERY GROUPS 0-7
+193 YAAA AAA1 1100 0001 QUERY GROUPS 8-15
+194 YAAA AAA1 1100 0010 QUERY RANDOM ADDRESS (H)
+195 YAAA AAA1 1100 0011 QUERY RANDOM ADDRESS (M)
+196 YAAA AAA1 1100 0100 QUERY RANDOM ADDRESS (L)
+197 YAAA AAA1 1100 0101 READ MEMORY LOCATION
+
+224 – 254 YAAA AAA1 111X XXXX See parts 2XX of this standard
+
+255 YAAA AAA1 1111 1111 QUERY EXTENDED VERSION NUMBER
+256 1010 0001 0000 0000 TERMINATE
+257 1010 0011 XXXX XXXX DATA TRANSFER REGISTER (DTR)
+258 1010 0101 XXXX XXXX INITIALISE
+259 1010 0111 0000 0000 RANDOMISE
+260 1010 1001 0000 0000 COMPARE
+261 1010 1011 0000 0000 WITHDRAW
+262 – 263 1010 11X1 0000 0000 a
+264 1011 0001 HHHH HHHH SEARCHADDRH
+265 1011 0011 MMMM MMMM SEARCHADDRM
+266 1011 0101 LLLL LLLL SEARCHADDRL
+
+267 1011 0111 0AAA AAA1 PROGRAM SHORT ADDRESS
+268 1011 1001 0AAA AAA1 VERIFY SHORT ADDRESS
+269 1011 1011 0000 0000 QUERY SHORT ADDRESS
+270 1011 1101 0000 0000 PHYSICAL SELECTION
+
+272 1100 0001 XXXX XXXX ENABLE DEVICE TYPE X
+273 1100 0011 XXXX XXXX DATA TRANSFER REGISTER 1 (DTR1)
+274 1100 0101 XXXX XXXX DATA TRANSFER REGISTER 2 (DTR2)
+275 1100 0111 XXXX XXXX WRITE MEMORY LOCATION
+
+Però questi comandi estesi non hanno l'indirizzamento, quindi ogni slave va programmato prima di metterlo sul bus con gli altri.
 
 
-Configuration commands
-======================
-Command; Command No; Description; Answer
-20hex 32dez Reset the parameters to default settings - 
-21hex 33dez Store the current light level in the DTR (Data Transfer Register) - 
-22hex ... 29hex 34dez ... 41dez reserved - 
-2Ahex 42dez Store the value in the DTR as the maximum level - 
-2Bhex 43dez Store the value in the DTR as the minimum level - 
-2Chex 44dez Store the value in the DTR as the system failure level - 
-2Dhex 45dez Store the value in the DTR as the power on level - 
-2Ehex 46dez Store the value in the DTR as the fade time - 
-2Fhex 47dez Store the value in the DTR as the fade rate - 
-30hex ... 3Fhex 48dez ... 63dez reserved - 
-4nhex
-(n: 0hex ... Fhex) 64dez ... 79dez Store the value in the DTR as the selected scene (n) - 
-5nhex
-(n: 0hex ... Fhex) 80dez ... 95dez Remove the selected scene (n) from the DALI slave - 
-6nhex
-(n: 0hex ... Fhex) 96dez ... 111dez Add the DALI slave unit to the selected group (n) - 
-7nhex
-(n: 0hex ... Fhex) 112dez ... 127dez Remove the DALI slave unit from the selected group (n) - 
-80hex 128dez Store the value in the DTR as a short address - 
-81hex ... 8Fhex 129dez ... 143dez reserved - 
-90hex 144dez Returns the status (XX) of the DALI slave XX 
-91hex 145dez Check if the DALI slave is working yes/no 
-92hex 146dez Check if there is a lamp failure yes/no 
-93hex 147dez Check if the lamp is operating yes/no 
-94hex 148dez Check if the slave has received a level out of limit yes/no 
-95hex 149dez Check if the DALI slave is in reset state yes/no 
-96hex 150dez Check if the DALI slave is missing a short address XX 
-97hex 151dez Returns the version number as XX 
-98hex 152dez Returns the content of the DTR as XX 
-99hex 153dez Returns the device type as XX 
-9Ahex 154dez Returns the physical minimum level as XX 
-9Bhex 155dez Check if the DALI slave is in power failure mode yes/no 
-9Chex ... 9Fhex 156dez ... 159dez reserved - 
-A0hex 160dez Returns the current light level as XX 
-A1hex 161dez Returns the maximum allowed light level as XX 
-A2hex 162dez Returns the minimum allowed light level as XX 
-A3hex 163dez Return the power up level as XX 
-A4hex 164dez Returns the system failure level as XX 
-A5hex 165dez Returns the fade time as X and the fade rate as Y XY 
-A6hex ... AFhex 166dez ... 175dez reserved - 
-Bnhex
-(n: 0hex ... Fhex) 176dez ... 191dez Returns the light level XX for the selected scene (n) XX 
-C0hex 192dez Returns a bit pattern XX indicating which group (0-7) the DALI slave belongs to XX 
-C1hex 193dez Returns a bit pattern XX indicating which group (8-15) the DALI slave belongs to XX 
-C2hex 194dez Returns the high bits of the random address as HH 
-C3hex 195dez Return the middle bit of the random address as MM 
-C4hex 196dez Returns the lower bits of the random address as LL 
-C5hex ... DFhex 197dez ... 223dez reserved - 
-E0hex ... FFhex 224dez ... 255dez Returns application specific extension commands   
+La lista dei comandi specifici (224-254) per i device di tipo 6 (standard 207) è questa:
+224 YAAA AAA1 1110 0000 REFERENCE SYSTEM POWER
+225 YAAA AAA1 1110 0001 ENABLE CURRENT PROTECTOR
+226 YAAA AAA1 1110 0010 DISABLE CURRENT PROTECTOR
+227 YAAA AAA1 1110 0011 SELECT DIMMING CURVE
+228 YAAA AAA1 1110 0100 STORE DTR AS FAST FADE TIME
+
+237 YAAA AAA1 1110 1101 QUERY GEAR TYPE
+238 YAAA AAA1 1110 1110 QUERY DIMMING CURVE
+239 YAAA AAA1 1110 1111 QUERY POSSIBLE OPERATING MODES
+240 YAAA AAA1 1111 0000 QUERY FEATURES
+241 YAAA AAA1 1111 0001 QUERY FAILURE STATUS
+242 YAAA AAA1 1111 0010 QUERY SHORT CIRCUIT
+243 YAAA AAA1 1111 0011 QUERY OPEN CIRCUIT
+244 YAAA AAA1 1111 0100 QUERY LOAD DECREASE
+245 YAAA AAA1 1111 0101 QUERY LOAD INCREASE
+246 YAAA AAA1 1111 0110 QUERY CURRENT PROTECTOR ACTIVE
+247 YAAA AAA1 1111 0111 QUERY THERMAL SHUT DOWN
+248 YAAA AAA1 1111 1000 QUERY THERMAL OVERLOAD
+249 YAAA AAA1 1111 1001 QUERY REFERENCE RUNNING
+250 YAAA AAA1 1111 1010 QUERY REFERENCE MEASUREMENT FAILED
+251 YAAA AAA1 1111 1011 QUERY CURRENT PROTECTOR ENABLED
+252 YAAA AAA1 1111 1100 QUERY OPERATING MODE
+253 YAAA AAA1 1111 1101 QUERY FAST FADE TIME
+254 YAAA AAA1 1111 1110 QUERY MIN FAST FADE TIME
+255 YAAA AAA1 1111 1111 QUERY EXTENDED VERSION NUMBER
+272 1100 0001 0000 0110 ENABLE DEVICE TYPE 6
 
 
 Note Repeat of DALI commands 
